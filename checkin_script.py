@@ -9,6 +9,7 @@ Extracting selected emails from gmail account
 """
 
 # Libraries
+import time
 import imaplib
 import email
 from email.header import decode_header
@@ -31,15 +32,14 @@ new_directory = 'C:\\Users\\lsala\\OneDrive\\Lucas Salamuni\\Geral\\Projetos\\Ch
 os.chdir(new_directory)
 
 # Initializing df
-df = pd.DataFrame(columns = ["Name", "Checkin_Date", "Authentication"])
+df = pd.DataFrame(columns=["Name", "Checkin_Date", "Authentication"])
 
 # Reading the yaml file with user and password
 with open('email_user_password.yml') as f:
     content = f.read()
 
 # Importing username and password from the given file
-my_credentials = yaml.load(content, 
-                           Loader = yaml.FullLoader)
+my_credentials = yaml.load(content, Loader=yaml.FullLoader)
 
 # Loading the username as well as the password from the yaml file
 user = my_credentials['user']
@@ -124,93 +124,110 @@ except Exception as e:
 finally:
     my_mail.logout()
 
-# Initializing selenium
-options = Options()
-options.add_experimental_option("detach", True)
-
-driver = webdriver.Chrome(service = Service(ChromeDriverManager().install()),
-                          options = options)
-
-# Navigating to the check-in link
-driver.get(checkin_link)
-
-# Inserting the CPF into the input field
+# Lendo o arquivo YAML com os CPFs
 with open('CPFs.yml') as f:
     content = f.read()
+my_cpfs = yaml.load(content, Loader=yaml.FullLoader)
+cpfs = my_cpfs['CPFs']  # Assumindo que os CPFs estão listados sob a chave 'CPFs'
 
-my_cpfs = yaml.load(content, 
-                    Loader = yaml.FullLoader)
+# Loop para processar cada CPF
+for cpf in cpfs:
+    # Inicializando o Selenium para cada CPF
+    options = Options()
+    options.add_experimental_option("detach", True)
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-cpf = my_cpfs['CPF']
+    # Navegando para o link de check-in
+    driver.get(checkin_link)
 
-try:
-    # Configurar uma espera explícita com um timeout de 10 segundos
-    wait = WebDriverWait(driver, 10)
-    input_field = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "input")))
-    
-    # Enviar CPF para o campo de entrada, se encontrado
-    input_field.send_keys(cpf)
-
-except NoSuchElementException as e:
-    print(f"Elemento não encontrado: {e}")
-
-# Clicking the search button
-click_pesquisar = driver.find_element(By.CLASS_NAME, "button")
-click_pesquisar.click()
-
-# Conditional: already checked-in VS not yet done
-try:
-    # Aguarde até que um dos elementos com as mensagens especificadas esteja presente na página
-    wait = WebDriverWait(driver, 10)
-    
-    # Verificar a presença do elemento "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN"
     try:
-        message_element_check_in = wait.until(
-            EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div/div/div/div/div[2]/div/div[1]/div[1]"))
-        )
-        if "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN" in message_element_check_in.text:
-            print("Mensagem de seleção de contratos encontrada.")
-            # Localize o checkbox e clique nele
-            checkbox = driver.find_element(By.XPATH, "//input[@type='checkbox']")
-            checkbox.click()
-            
-            # Localize o botão "CONFIRMAR" e clique nele
-            confirmar_button = driver.find_element(By.XPATH, "/html/body/div[1]/div/div/div/div/div/div[2]/div/div[1]/div[3]/button")
-            confirmar_button.click()
-            
-            print("Check-in realizado com sucesso!")
-        else:
-            name_element = wait.until(
-                EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
-                )
-            checkin_date_element = wait.until(
-                EC.presence_of_element_located((By.XPATH, "//div[@class='hour large']"))
-                )
-            authentication_element = wait.until(
-                EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
-                )
-            
-            name = name_element.text
-            checkin_date = checkin_date_element.text
-            pattern = r"(\d{2}/\d{2}/\d{4})"
-            match = re.search(pattern, checkin_date)
-            if match:
-                checkin_date = match.group(1)
-            else:
-                checkin_date = ""
-            authentication = authentication_element.text
-            
-            new_row = pd.DataFrame({"Name": [name], "Checkin_Date": [checkin_date], "Authentication": [authentication]})
-            
-            df = pd.concat([df, new_row], ignore_index = True)
-            
-            driver.quit()
-            
-            print("Check-in já foi realizado. Fechando a página.")
-            print(df)
+        # Configurar uma espera explícita com um timeout de 10 segundos
+        wait = WebDriverWait(driver, 10)
+        input_field = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "input")))
+        
+        # Enviar CPF para o campo de entrada, se encontrado
+        input_field.send_keys(cpf)
 
-    except NoSuchElementException:
-        print("Elemento de seleção de contratos não encontrado.")
+    except NoSuchElementException as e:
+        print(f"Elemento não encontrado: {e}")
+        driver.quit()
+        continue
 
-except Exception as e:
-    print("Ocorreu um erro:", e)
+    # Clicar no botão de pesquisa
+    click_pesquisar = driver.find_element(By.CLASS_NAME, "button")
+    click_pesquisar.click()
+
+    # Condicional: já fez check-in VS ainda não feito
+    try:
+        # Aguarde até que um dos elementos com as mensagens especificadas esteja presente na página
+        wait = WebDriverWait(driver, 100)
+        
+        # Verificar a presença do elemento "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN"
+        try:
+            message_element_check_in = wait.until(
+                EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div/div/div/div/div[2]/div/div[1]/div[1]/div/h3"))
+            )
+            if "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN" in message_element_check_in.text:
+                print("Mensagem de seleção de contratos encontrada.")
+                
+                # Localize o checkbox e clique nele
+                checkbox = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@type='checkbox']"))
+                    )
+                checkbox.click()
+                
+                time.sleep(5)
+                
+                # Localize o botão "CONFIRMAR" e clique nele
+                confirmar_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[@class='button']"))
+                    )
+                confirmar_button.click()
+                
+                time.sleep(5)
+                
+                print("Check-in realizado com sucesso!")
+            else:                
+                comprovante_button = WebDriverWait(driver, 20).until(
+                    EC.element_to_be_clickable((By.By.CLASS_NAME, 'button-comprovante'))
+                    )
+                comprovante_button.click()
+                
+                name_element = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
+                )
+                checkin_date_element = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@class='hour large']"))
+                )
+                authentication_element = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
+                )
+                
+                name = name_element.text
+                checkin_date = checkin_date_element.text
+                pattern = r"(\d{2}/\d{2}/\d{4})"
+                match = re.search(pattern, checkin_date)
+                if match:
+                    checkin_date = match.group(1)
+                else:
+                    checkin_date = ""
+                authentication = authentication_element.text
+                
+                new_row = pd.DataFrame({"Name": [name], "Checkin_Date": [checkin_date], "Authentication": [authentication]})
+                
+                df = pd.concat([df, new_row], ignore_index=True)
+                
+                print("Check-in já foi realizado.")
+                print(df)
+
+        except NoSuchElementException:
+            print("Elemento de seleção de contratos não encontrado.")
+
+    except Exception as e:
+        print("Ocorreu um erro:", e)
+    finally:
+        driver.quit()
+
+# Save the DataFrame to a CSV file
+df.to_excel('checkin_data.xlsx', index=False)
+print("Dados salvos no arquivo 'checkin_data.csv'")
