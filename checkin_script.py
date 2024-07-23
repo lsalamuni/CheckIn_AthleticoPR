@@ -112,7 +112,7 @@ try:
 
                 if link:
                     checkin_link = link
-                    print(f"Link de check-in armazenado: {checkin_link}")
+                    print(f"Link: {checkin_link}")
                 else:
                     print("Nenhum link encontrado no email.")
 
@@ -141,6 +141,7 @@ for cpf in cpfs:
     # Inicializando o Selenium para cada CPF
     options = Options()
     options.add_experimental_option("detach", True)
+    options.add_argument("--headless")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     # Navegando para o link de check-in
@@ -148,7 +149,7 @@ for cpf in cpfs:
 
     try:
         # Configurar uma espera explícita com um timeout de 10 segundos
-        wait = WebDriverWait(driver, 10)
+        wait = WebDriverWait(driver, 30)
         input_field = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "input")))
         
         # Enviar CPF para o campo de entrada, se encontrado
@@ -177,7 +178,7 @@ for cpf in cpfs:
                 print("Mensagem de seleção de contratos encontrada.")
                 
                 # Localize o checkbox e clique nele
-                checkbox = WebDriverWait(driver, 10).until(
+                checkbox = WebDriverWait(driver, 30).until(
                     EC.element_to_be_clickable((By.XPATH, "//input[@type='checkbox']"))
                     )
                 checkbox.click()
@@ -199,6 +200,8 @@ for cpf in cpfs:
                 )
                 comprovante_button.click()
                 
+                time.sleep(2)
+                
                 name_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
                 )
@@ -211,6 +214,8 @@ for cpf in cpfs:
                 authentication_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
                 )
+                
+                time.sleep(2)
                 
                 name = name_element.text
                 checkin_date = checkin_date_element.text
