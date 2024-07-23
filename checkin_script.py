@@ -32,7 +32,7 @@ new_directory = 'C:\\Users\\lsala\\OneDrive\\Lucas Salamuni\\Geral\\Projetos\\Ch
 os.chdir(new_directory)
 
 # Initializing df
-df = pd.DataFrame(columns=["Name", "Checkin_Date", "Authentication"])
+df = pd.DataFrame(columns=["Name", "Checkin_Date", "Match_Date", "Authentication"])
 
 # Reading the yaml file with user and password
 with open('email_user_password.yml') as f:
@@ -165,7 +165,7 @@ for cpf in cpfs:
         # Verificar a presença do elemento "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN"
         try:
             message_element_check_in = wait.until(
-                EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div/div/div/div/div[2]/div/div[1]/div[1]/div/h3"))
+                EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div/div/div/div/div[2]/div[1]/div/div/h1")) #DANDO PROBLEMA!!!
             )
             if "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN" in message_element_check_in.text:
                 print("Mensagem de seleção de contratos encontrada.")
@@ -188,16 +188,14 @@ for cpf in cpfs:
                 
                 print("Check-in realizado com sucesso!")
             else:                
-                comprovante_button = WebDriverWait(driver, 20).until(
-                    EC.element_to_be_clickable((By.By.CLASS_NAME, 'button-comprovante'))
-                    )
-                comprovante_button.click()
-                
                 name_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
                 )
                 checkin_date_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='hour large']"))
+                )
+                match_date_element = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@class='data']"))
                 )
                 authentication_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
@@ -205,6 +203,7 @@ for cpf in cpfs:
                 
                 name = name_element.text
                 checkin_date = checkin_date_element.text
+                match_date = match_date_element.text
                 pattern = r"(\d{2}/\d{2}/\d{4})"
                 match = re.search(pattern, checkin_date)
                 if match:
@@ -213,7 +212,8 @@ for cpf in cpfs:
                     checkin_date = ""
                 authentication = authentication_element.text
                 
-                new_row = pd.DataFrame({"Name": [name], "Checkin_Date": [checkin_date], "Authentication": [authentication]})
+                new_row = pd.DataFrame({"Name": [name], "Checkin_Date": [checkin_date], 
+                                        "Match_Date": [match_date], "Authentication": [authentication]})
                 
                 df = pd.concat([df, new_row], ignore_index=True)
                 
@@ -231,3 +231,27 @@ for cpf in cpfs:
 # Save the DataFrame to a CSV file
 df.to_excel('checkin_data.xlsx', index=False)
 print("Dados salvos no arquivo 'checkin_data.csv'")
+
+# Reading the yaml file with user and password
+with open('email_user_password_ii.yml') as f:
+    content = f.read()
+
+# Importing username and password from the given file
+my_credentials = yaml.load(content, Loader=yaml.FullLoader)
+
+# Loading the username as well as the password from the yaml file
+user = my_credentials['user']
+password = my_credentials['password']
+
+# URL for IMAP connection
+imap_url = 'imap.gmail.com'
+
+# Email content
+with open('email_content.yml') as f:
+    content = f.read()
+
+email_content = yaml.load(content, Loader=yaml.FullLoader)
+
+recipient = email_content['recipient']
+title = email_content['title']
+message = email_content['message']
