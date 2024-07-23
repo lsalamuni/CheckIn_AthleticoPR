@@ -25,14 +25,21 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 import pandas as pd
+from openpyxl import load_workbook
 import re
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import mimetypes
+import smtplib
 
 # Setting a new directory
 new_directory = 'C:\\Users\\lsala\\OneDrive\\Lucas Salamuni\\Geral\\Projetos\\Check-in'
 os.chdir(new_directory)
 
 # Initializing df
-df = pd.DataFrame(columns=["Name", "Checkin_Date", "Match_Date", "Authentication"])
+df = pd.DataFrame(columns=["Nome", "Data do Checkin", "Data do Jogo", "Autenticação"])
 
 # Reading the yaml file with user and password
 with open('email_user_password.yml') as f:
@@ -98,7 +105,6 @@ try:
                                 if area_tag.has_attr('alt') and 'check-in' in area_tag['alt'].lower():
                                     if area_tag.has_attr('href'):
                                         link = area_tag['href']
-                                        print(f"Link: {link}")
                                         break
                         except Exception as e:
                             print(f"Erro ao extrair o link: {e}")
@@ -165,7 +171,7 @@ for cpf in cpfs:
         # Verificar a presença do elemento "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN"
         try:
             message_element_check_in = wait.until(
-                EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div/div/div/div/div[2]/div[1]/div/div/h1")) #DANDO PROBLEMA!!!
+                EC.presence_of_element_located((By.XPATH, "//h3[contains(text(), 'Seu check-in já foi realizado')]")) #DANDO PROBLEMA!!!
             )
             if "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN" in message_element_check_in.text:
                 print("Mensagem de seleção de contratos encontrada.")
@@ -187,7 +193,12 @@ for cpf in cpfs:
                 time.sleep(5)
                 
                 print("Check-in realizado com sucesso!")
-            else:                
+            else:  
+                comprovante_button = WebDriverWait(driver, 30).until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[@class='button button-comprovante']"))
+                )
+                comprovante_button.click()
+                
                 name_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
                 )
@@ -212,8 +223,8 @@ for cpf in cpfs:
                     checkin_date = ""
                 authentication = authentication_element.text
                 
-                new_row = pd.DataFrame({"Name": [name], "Checkin_Date": [checkin_date], 
-                                        "Match_Date": [match_date], "Authentication": [authentication]})
+                new_row = pd.DataFrame({"Nome": [name], "Data do Checkin": [checkin_date], 
+                                        "Data do Jogo": [match_date], "Autenticação": [authentication]})
                 
                 df = pd.concat([df, new_row], ignore_index=True)
                 
@@ -228,30 +239,84 @@ for cpf in cpfs:
     finally:
         driver.quit()
 
-# Save the DataFrame to a CSV file
+# Save the DataFrame to a xlsx file
 df.to_excel('checkin_data.xlsx', index=False)
 print("Dados salvos no arquivo 'checkin_data.csv'")
 
-# Reading the yaml file with user and password
+# Email content
+with open('email_content.yml', encoding="utf-8") as f:
+    email_content = yaml.load(f, Loader=yaml.FullLoader)
+    
+file_path = email_content["path"]
+
+# Load the xlsx file in openpyxl
+wb = load_workbook(file_path)
+ws = wb.active
+
+# Adjusting the xlsx columns
+for col in ws.columns:
+    max_length = 0
+    column = col[0].column_letter
+    for cell in col:
+        try:
+            if len(str(cell.value)) > max_length:
+                max_length = len(cell.value)
+        except:
+            pass
+    adjusted_width = (max_length + 2)
+    ws.column_dimensions[column].width = adjusted_width
+
+wb.save(file_path)
+
+# Reading the YAML file with user and password
 with open('email_user_password_ii.yml') as f:
     content = f.read()
 
 # Importing username and password from the given file
 my_credentials = yaml.load(content, Loader=yaml.FullLoader)
 
-# Loading the username as well as the password from the yaml file
+# Loading the username as well as the password from the YAML file
 user = my_credentials['user']
 password = my_credentials['password']
 
-# URL for IMAP connection
-imap_url = 'imap.gmail.com'
-
-# Email content
-with open('email_content.yml') as f:
-    content = f.read()
-
-email_content = yaml.load(content, Loader=yaml.FullLoader)
-
-recipient = email_content['recipient']
+# Organizing the email content
+recipient = email_content['recipient'].split(", ")
 title = email_content['title']
 message = email_content['message']
+
+# Setting up the MIME
+msg = MIMEMultipart()
+msg["From"] = user
+msg["To"] = ", ".join(recipient)
+msg["Subject"] = title
+
+# Attach the body with the msg instance
+msg.attach(MIMEText(message, "plain", "utf-8"))
+
+# Guess the MIME type and subtype of the attachment
+mime_type, _ = mimetypes.guess_type(file_path)
+mime_type, mime_subtype = mime_type.split('/')
+
+# Open the file to be sent
+with open(file_path, "rb") as file:
+    mime_base = MIMEBase(mime_type, mime_subtype)
+    mime_base.set_payload(file.read())
+    encoders.encode_base64(mime_base)
+    mime_base.add_header("Content-Disposition", f"attachment; filename={file_path}")
+    msg.attach(mime_base)
+
+try:
+    # Creating the server connection
+    server = smtplib.SMTP("smtp.gmail.com", 587)
+    server.starttls()
+    server.login(user, password)
+    
+    # Sending the email
+    text = msg.as_string()
+    server.sendmail(user, recipient, text)
+    server.quit()
+    
+    print("E-mail enviado com sucesso!")
+    
+except Exception as e:
+    print(f"Falha ao enviar o e-mail: {e}")
