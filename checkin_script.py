@@ -8,21 +8,31 @@ Extracting selected emails from gmail account
 
 """
 
+# -*- coding: utf-8 -*-
+"""
+Extracting selected emails from gmail account
+
+1. Need to enable IMAP on gmail settings
+
+2. In case of 2-factor authentication, it is needed to create an application specific password
+
+"""
+
 # Libraries
 import time
 import imaplib
 import email
 from email.header import decode_header
 import os
-import yaml # to load saved login credentials from a yaml file
+import yaml
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options 
+from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.common.by import By
 import pandas as pd
 from openpyxl import load_workbook
@@ -39,7 +49,7 @@ new_directory = 'C:\\Users\\lsala\\OneDrive\\Lucas Salamuni\\Geral\\Projetos\\Ch
 os.chdir(new_directory)
 
 # Initializing df
-df = pd.DataFrame(columns=["Nome", "Data do Checkin", "Data do Jogo", "Autenticação"])
+df = pd.DataFrame(columns=["Nome", "Data do Checkin", "Data do Jogo", "Campeonato", "Autenticação"])
 
 # Reading the yaml file with user and password
 with open('email_user_password.yml') as f:
@@ -58,8 +68,8 @@ imap_url = 'imap.gmail.com'
 # Further procedures  
 try:
     # connecting with gmail via SSL
-    my_mail = imaplib.IMAP4_SSL(imap_url) 
-    my_mail.login(user, password)  # loging in with credentials
+    my_mail = imaplib.IMAP4_SSL(imap_url)
+    my_mail.login(user, password)  # logging in with credentials
 
     my_mail.select('inbox')  # selecting the Inbox to fetch the messages
 
@@ -142,6 +152,72 @@ for cpf in cpfs:
     options = Options()
     options.add_experimental_option("detach", True)
     options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    # Navegando para o link de check-in
+    driver.get(checkin_link)
+
+    try:
+        # Configurar uma espera explícita com um timeout de 30 segundos
+        wait = WebDriverWait(driver, 5)
+        input_field = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "input")))
+
+        # Enviar CPF para o campo de entrada, se encontrado
+        input_field.send_keys(cpf)
+
+    except (NoSuchElementException, TimeoutException) as e:
+        print(f"Elemento não encontrado ou tempo esgotado ao tentar encontrar o campo de entrada para CPF: {e}")
+        driver.quit()
+        continue
+
+    try:
+        # Clicar no botão de pesquisa
+        click_pesquisar = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "button")))
+        click_pesquisar.click()
+
+        # Condicional: já fez check-in VS ainda não feito
+        try:
+            # Verificar a presença do elemento "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN"
+            message_element_check_in = wait.until(
+                EC.presence_of_element_located((By.XPATH, "//h3[contains(text(), 'Selecione os contratos que deseja fazer o check-in')]"))
+            )
+
+            if "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN" in message_element_check_in.text:
+                print("Mensagem de seleção de contratos encontrada.")
+
+                # Localize o checkbox e clique nele
+                checkbox = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@type='checkbox']")))
+                checkbox.click()
+
+                time.sleep(2)
+
+                # Localize o botão "CONFIRMAR" e clique nele
+                confirmar_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@class='button']")))
+                confirmar_button.click()
+
+                time.sleep(2)
+
+                print("Check-in realizado com sucesso!")
+            else:
+                print("Check-in já realizado.")
+
+        except (NoSuchElementException, TimeoutException, StaleElementReferenceException):
+            print(f"Check-in já realizado para o CPF {cpf}")
+
+    except Exception as e:
+        print("Ocorreu um erro:", e)
+    finally:
+        driver.quit()
+
+# Loop para processar cada CPF
+for cpf in cpfs:
+    # Inicializando o Selenium para cada CPF
+    options = Options()
+    options.add_experimental_option("detach", True)
+    options.add_argument("--headless")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     # Navegando para o link de check-in
@@ -151,7 +227,7 @@ for cpf in cpfs:
         # Configurar uma espera explícita com um timeout de 10 segundos
         wait = WebDriverWait(driver, 30)
         input_field = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "input")))
-        
+
         # Enviar CPF para o campo de entrada, se encontrado
         input_field.send_keys(cpf)
 
@@ -164,44 +240,25 @@ for cpf in cpfs:
     click_pesquisar = driver.find_element(By.CLASS_NAME, "button")
     click_pesquisar.click()
 
-    # Condicional: já fez check-in VS ainda não feito
     try:
         # Aguarde até que um dos elementos com as mensagens especificadas esteja presente na página
         wait = WebDriverWait(driver, 100)
-        
+
         # Verificar a presença do elemento "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN"
         try:
             message_element_check_in = wait.until(
-                EC.presence_of_element_located((By.XPATH, "//h3[contains(text(), 'Seu check-in já foi realizado')]")) #DANDO PROBLEMA!!!
+                EC.presence_of_element_located((By.XPATH, "//h3[contains(text(), 'Seu check-in já foi realizado')]"))
             )
-            if "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN" in message_element_check_in.text:
-                print("Mensagem de seleção de contratos encontrada.")
-                
-                # Localize o checkbox e clique nele
-                checkbox = WebDriverWait(driver, 30).until(
-                    EC.element_to_be_clickable((By.XPATH, "//input[@type='checkbox']"))
-                    )
-                checkbox.click()
-                
-                time.sleep(5)
-                
-                # Localize o botão "CONFIRMAR" e clique nele
-                confirmar_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[@class='button']"))
-                    )
-                confirmar_button.click()
-                
-                time.sleep(5)
-                
-                print("Check-in realizado com sucesso!")
-            else:  
+            if "SEU CHECK-IN JÁ FOI REALIZADO" in message_element_check_in.text:
+                print("Mensagem encontrada.")
+
                 comprovante_button = WebDriverWait(driver, 30).until(
                     EC.element_to_be_clickable((By.XPATH, "//a[@class='button button-comprovante']"))
                 )
                 comprovante_button.click()
-                
+
                 time.sleep(2)
-                
+
                 name_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
                 )
@@ -211,12 +268,15 @@ for cpf in cpfs:
                 match_date_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='data']"))
                 )
+                tournament_element = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@class='campeonato']"))
+                )
                 authentication_element = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
                 )
-                
+
                 time.sleep(2)
-                
+
                 name = name_element.text
                 checkin_date = checkin_date_element.text
                 match_date = match_date_element.text
@@ -226,15 +286,22 @@ for cpf in cpfs:
                     checkin_date = match.group(1)
                 else:
                     checkin_date = ""
+                tournament = tournament_element.text
                 authentication = authentication_element.text
-                
-                new_row = pd.DataFrame({"Nome": [name], "Data do Checkin": [checkin_date], 
-                                        "Data do Jogo": [match_date], "Autenticação": [authentication]})
-                
+
+                new_row = pd.DataFrame({"Nome": [name], "Data do Checkin": [checkin_date],
+                                        "Data do Jogo": [match_date],
+                                        "Campeonato": [tournament],
+                                        "Autenticação": [authentication]})
+
                 df = pd.concat([df, new_row], ignore_index=True)
-                
+
                 print("Check-in já foi realizado.")
+
                 print(df)
+
+            else:
+                print("Erro no XPATH: mensagem não encontrada.")
 
         except NoSuchElementException:
             print("Elemento de seleção de contratos não encontrado.")
@@ -245,13 +312,14 @@ for cpf in cpfs:
         driver.quit()
 
 # Save the DataFrame to a xlsx file
+df.sort_values(by="Nome", inplace=True)
 df.to_excel('checkin_data.xlsx', index=False)
-print("Dados salvos no arquivo 'checkin_data.csv'")
+print("Dados salvos no arquivo 'checkin_data.xlsx'")
 
 # Email content
 with open('email_content.yml', encoding="utf-8") as f:
     email_content = yaml.load(f, Loader=yaml.FullLoader)
-    
+
 file_path = email_content["path"]
 
 # Load the xlsx file in openpyxl
@@ -295,10 +363,10 @@ msg["From"] = user
 msg["To"] = ", ".join(recipient)
 msg["Subject"] = title
 
-# Attach the body with the msg instance
+# Attaching the body with the msg instance
 msg.attach(MIMEText(message, "plain", "utf-8"))
 
-# Guess the MIME type and subtype of the attachment
+# Guessing the MIME type and subtype of the attachment
 mime_type, _ = mimetypes.guess_type(file_path)
 mime_type, mime_subtype = mime_type.split('/')
 
@@ -315,13 +383,13 @@ try:
     server = smtplib.SMTP("smtp.gmail.com", 587)
     server.starttls()
     server.login(user, password)
-    
+
     # Sending the email
     text = msg.as_string()
     server.sendmail(user, recipient, text)
     server.quit()
-    
+
     print("E-mail enviado com sucesso!")
-    
+
 except Exception as e:
     print(f"Falha ao enviar o e-mail: {e}")
