@@ -8,16 +8,6 @@ Extracting selected emails from gmail account
 
 """
 
-# -*- coding: utf-8 -*-
-"""
-Extracting selected emails from gmail account
-
-1. Need to enable IMAP on gmail settings
-
-2. In case of 2-factor authentication, it is needed to create an application specific password
-
-"""
-
 # Libraries
 import time
 import imaplib
@@ -252,54 +242,151 @@ for cpf in cpfs:
             if "SEU CHECK-IN JÁ FOI REALIZADO" in message_element_check_in.text:
                 print("Mensagem encontrada.")
 
-                comprovante_button = WebDriverWait(driver, 30).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@class='button button-comprovante']"))
-                )
-                comprovante_button.click()
+                try:
+                    comprovante_button = WebDriverWait(driver, 30).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@class='button button-comprovante']"))
+                    )
+                    comprovante_button.click()
 
-                time.sleep(2)
+                    time.sleep(2)
 
-                name_element = wait.until(
-                    EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
-                )
-                checkin_date_element = wait.until(
-                    EC.presence_of_element_located((By.XPATH, "//div[@class='hour large']"))
-                )
-                match_date_element = wait.until(
-                    EC.presence_of_element_located((By.XPATH, "//div[@class='data']"))
-                )
-                tournament_element = wait.until(
-                    EC.presence_of_element_located((By.XPATH, "//div[@class='campeonato']"))
-                )
-                authentication_element = wait.until(
-                    EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
-                )
+                    name_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
+                    )
+                    checkin_date_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='hour large']"))
+                    )
+                    match_date_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='data']"))
+                    )
+                    tournament_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='campeonato']"))
+                    )
+                    authentication_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
+                    )
 
-                time.sleep(2)
+                    time.sleep(2)
 
-                name = name_element.text
-                checkin_date = checkin_date_element.text
-                match_date = match_date_element.text
-                pattern = r"(\d{2}/\d{2}/\d{4})"
-                match = re.search(pattern, checkin_date)
-                if match:
-                    checkin_date = match.group(1)
-                else:
-                    checkin_date = ""
-                tournament = tournament_element.text
-                authentication = authentication_element.text
+                    name = name_element.text
+                    checkin_date = checkin_date_element.text
+                    match_date = match_date_element.text
+                    pattern = r"(\d{2}/\d{2}/\d{4})"
+                    match = re.search(pattern, checkin_date)
+                    if match:
+                        checkin_date = match.group(1)
+                    else:
+                        checkin_date = ""
+                    tournament = tournament_element.text
+                    authentication = authentication_element.text
 
-                new_row = pd.DataFrame({"Nome": [name], "Data do Checkin": [checkin_date],
-                                        "Data do Jogo": [match_date],
-                                        "Campeonato": [tournament],
-                                        "Autenticação": [authentication]})
+                    new_row = pd.DataFrame({"Nome": [name], "Data do Checkin": [checkin_date],
+                                            "Data do Jogo": [match_date],
+                                            "Campeonato": [tournament],
+                                            "Autenticação": [authentication]})
 
-                df = pd.concat([df, new_row], ignore_index=True)
+                    df = pd.concat([df, new_row], ignore_index=True)
 
-                print("Check-in já foi realizado.")
+                    print("Check-in já foi realizado.")
+                    print(df)
 
-                print(df)
+                except TimeoutException:
+                    print("Período de check-in terminou")
+            else:
+                print("Erro no XPATH: mensagem não encontrada.")
 
+        except NoSuchElementException:
+            print("Elemento de seleção de contratos não encontrado.")
+            
+    except Exception as e:
+        print("Fim do período de check-in.")
+    
+    finally:
+        driver.quit()
+
+# Loop para processar cada CPF
+for cpf in cpfs:
+    # Inicializando o Selenium para cada CPF
+    options = Options()
+    options.add_experimental_option("detach", True)
+    options.add_argument("--headless")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    # Navegando para o link de check-in
+    driver.get(checkin_link)
+
+    try:
+        # Configurar uma espera explícita com um timeout de 10 segundos
+        wait = WebDriverWait(driver, 20)
+        input_field = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "input")))
+
+        # Enviar CPF para o campo de entrada, se encontrado
+        input_field.send_keys(cpf)
+
+    except NoSuchElementException as e:
+        print(f"Elemento não encontrado: {e}")
+        driver.quit()
+        continue
+
+    # Clicar no botão de pesquisa
+    click_pesquisar = driver.find_element(By.CLASS_NAME, "button")
+    click_pesquisar.click()
+
+    try:
+        # Aguarde até que um dos elementos com as mensagens especificadas esteja presente na página
+        wait = WebDriverWait(driver, 20)
+
+        # Verificar a presença do elemento "SELECIONE OS CONTRATOS QUE DESEJA FAZER O CHECK-IN"
+        try:
+            message_element_check_in = wait.until(
+                EC.presence_of_element_located((By.XPATH, "//h1[contains(text(), 'Comprovante de check-in')]"))
+            )
+            if "COMPROVANTE DE CHECK-IN" in message_element_check_in.text:
+                print("Mensagem encontrada.")
+
+                try:
+                    name_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='name']"))
+                    )
+                    checkin_date_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='hour large']"))
+                    )
+                    match_date_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='data']"))
+                    )
+                    tournament_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='campeonato']"))
+                    )
+                    authentication_element = wait.until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='text-center chave']"))
+                    )
+
+                    time.sleep(2)
+
+                    name = name_element.text
+                    checkin_date = checkin_date_element.text
+                    match_date = match_date_element.text
+                    pattern = r"(\d{2}/\d{2}/\d{4})"
+                    match = re.search(pattern, checkin_date)
+                    if match:
+                        checkin_date = match.group(1)
+                    else:
+                        checkin_date = ""
+                    tournament = tournament_element.text
+                    authentication = authentication_element.text
+
+                    new_row = pd.DataFrame({"Nome": [name], "Data do Checkin": [checkin_date],
+                                            "Data do Jogo": [match_date],
+                                            "Campeonato": [tournament],
+                                            "Autenticação": [authentication]})
+
+                    df = pd.concat([df, new_row], ignore_index=True)
+
+                    print("Check-in já foi realizado.")
+                    print(df)
+
+                except TimeoutException:
+                    print("Período de check-in terminou")
             else:
                 print("Erro no XPATH: mensagem não encontrada.")
 
@@ -308,8 +395,21 @@ for cpf in cpfs:
 
     except Exception as e:
         print("Ocorreu um erro:", e)
+        
     finally:
         driver.quit()
+
+# Save the DataFrame to a xlsx file
+df.sort_values(by="Nome", inplace=True)
+df.to_excel('checkin_data.xlsx', index=False)
+print("Dados salvos no arquivo 'checkin_data.xlsx'")
+
+
+# Save the DataFrame to a xlsx file
+df.sort_values(by="Nome", inplace=True)
+df.to_excel('checkin_data.xlsx', index=False)
+print("Dados salvos no arquivo 'checkin_data.xlsx'")
+
 
 # Save the DataFrame to a xlsx file
 df.sort_values(by="Nome", inplace=True)
